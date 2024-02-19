@@ -1,3 +1,5 @@
+import argparse
+import os
 import pdfplumber
 import sys
 import re
@@ -51,7 +53,6 @@ def extract_transactions_for_page(page, columns):
               transaction[column] += word['text'] + ' '
       # Check if the line starts with a date
       if re.match(r'\d{1,2}/\d{1,2}', transaction['Date']):
-        print(f"Transaction found: {i, transaction}")
         transactions.append(transaction)
       elif i > 0 and re.match(r'\d{1,2}/\d{1,2}', rows[i-1][1][0]['text']):
         # If the previous row starts with a date, append to the previous transaction
@@ -72,33 +73,42 @@ def extract_transactions_across_pages(file_path, start_pattern, end_pattern, col
         if is_extracting:
           transactions.extend(extract_transactions_for_page(page, columns))
         if end_pattern in page_text and is_extracting:
-          print(f"End pattern found on page {page.page_number}")
           is_extracting = False
           break
     return transactions
+def convert_pdf(file_path):
+  columns = ["Date", "Number", "Description", "Deposits/", "Withdrawals/", "Ending daily"]
+  start_pattern = "Transaction history"
+  end_pattern = "Ending balance on"
+  transactions = extract_transactions_across_pages(file_path, start_pattern, end_pattern, columns)
+  # Export to CSV
+  csv_file = file_path.replace('.pdf', '_transactions.csv')
+  with open(csv_file, 'w', newline='') as csvfile:
+      writer = csv.DictWriter(csvfile, fieldnames=columns)
+      writer.writeheader()
+      for transaction in transactions:
+          writer.writerow({column: transaction[column].strip() for column in columns})
+
+  print(f"CSV file created: {csv_file}")
+
+def batch_convert(directory):
+  for root, dirs, files in os.walk(directory):
+      for file in files:
+          if file.endswith(".pdf"):
+              convert_pdf(os.path.join(root, file))
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python extractPDFData.py filename.pdf")
-        sys.exit(1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch", help="Convert all PDFs in the specified directory", action="store_true")
+    parser.add_argument("path", help="The path to the PDF file or directory to convert")
+    args = parser.parse_args()
 
-    file_path = sys.argv[1]
-    columns = ["Date", "Number", "Description", "Deposits/", "Withdrawals/", "Ending daily"]
-    transactions = extract_transactions_across_pages(file_path, "Transaction history", "Ending balance on", columns)
-
+    if args.batch:
+        batch_convert(args.path)
+    else:
+        convert_pdf(args.path)
     
-    # Export to CSV
-    csv_file = file_path.replace('.pdf', '_transactions.csv')
-    with open(csv_file, 'w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=columns)
-        writer.writeheader()
-        for transaction in transactions:
-            # Print extracted data
-            # for transaction in transactions:
-            # print(' | '.join([f"{column}: {transaction[column].strip()}" for column in columns]))
-            writer.writerow({column: transaction[column].strip() for column in columns})
-
-    print(f"CSV file created: {csv_file}")
+    
 
 if __name__ == "__main__":
     main()
