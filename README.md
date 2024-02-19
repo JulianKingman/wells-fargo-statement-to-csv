@@ -12,4 +12,6 @@ Things you need:
  - pandas (pip install pandas)
  - Run `python combineCSVByDate.py my-converted-csv-folder`
 
+Note: csvs get overwritten without warning, so if you modify a csv, don't overwrite it!
+
 This took a lot of trial and error and pain, profit from my suffering!

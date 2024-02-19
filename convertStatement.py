@@ -81,7 +81,7 @@ def extract_transactions_for_page(page, columns, statement_date):
 
     return transactions
 
-def extract_transactions_across_pages(file_path, start_pattern, end_pattern, columns):
+def extract_transactions_across_pages(file_path, end_pattern, columns):
     transactions = []
     is_extracting = False
 
@@ -97,7 +97,8 @@ def extract_transactions_across_pages(file_path, start_pattern, end_pattern, col
     with pdfplumber.open(file_path) as pdf:
       for page in pdf.pages:
         page_text = page.extract_text()
-        if start_pattern in page_text:
+        print(page_text)
+        if page.page_number == 2:
           is_extracting = True
         if is_extracting:
           transactions.extend(extract_transactions_for_page(page, columns, statement_date))
@@ -108,10 +109,9 @@ def extract_transactions_across_pages(file_path, start_pattern, end_pattern, col
 
 def convert_pdf(file_path):
   columns = ["Date", "Number", "Description", "Deposits/", "Withdrawals/", "Ending daily"]
-  start_pattern = "Page 2 of "
   end_pattern = "Ending balance on"
   
-  transactions = extract_transactions_across_pages(file_path, start_pattern, end_pattern, columns)
+  transactions = extract_transactions_across_pages(file_path, end_pattern, columns)
 
   # Export to CSV
   csv_file = file_path.replace('.pdf', '_transactions.csv')
