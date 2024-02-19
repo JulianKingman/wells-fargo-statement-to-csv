@@ -4,15 +4,17 @@ import pdfplumber
 import sys
 import re
 import csv
+from dateutil.relativedelta import relativedelta
+from datetime import datetime
 
-def extract_transactions_for_page(page, columns):
+def extract_transactions_for_page(page, columns, statement_date):
     transactions = []
-    page_text = page.extract_text()
     column_positions = {column: None for column in columns}
-    current_date = None
             
     words = page.extract_words(keep_blank_chars=True)
     words.sort(key=lambda word: (word['top'], word['x0']))
+
+    print(words)
 
     if None in column_positions.values():
       processed_indices = []
@@ -24,6 +26,8 @@ def extract_transactions_for_page(page, columns):
       # Remove processed words
       for index in sorted(processed_indices, reverse=True):
         del words[index]
+    
+    print(column_positions)
 
     # Group words by row
     rows = []
@@ -41,6 +45,7 @@ def extract_transactions_for_page(page, columns):
     for i, (row, words_in_row) in enumerate(rows):
       # Initialize a new transaction
       transaction = {column: '' for column in columns}
+      print(words_in_row)
 
       for word in words_in_row:
         if 'Ending balance' in word['text']:
@@ -60,10 +65,34 @@ def extract_transactions_for_page(page, columns):
           if column != "Date":
             transactions[-1][column] += '\n' + transaction[column]
 
+    # When processing the date, add the year and handle the new year transition
+    for transaction in transactions:
+        month, day = map(int, transaction['Date'].split('/'))
+        transaction_date = datetime(statement_date.year, month, day)
+        month_difference = relativedelta(transaction_date, statement_date).months
+
+        if month_difference > 10:
+            transaction_date = transaction_date.replace(year=statement_date.year - 1)
+        elif month_difference < -10:
+            transaction_date = transaction_date.replace(year=statement_date.year + 1)
+
+        transaction['Date'] = transaction_date.strftime('%m/%d/%Y')
+
+
     return transactions
+
 def extract_transactions_across_pages(file_path, start_pattern, end_pattern, columns):
     transactions = []
     is_extracting = False
+
+    # Extract the date from the filename
+    match = re.search(r'(\d{6})', file_path)
+    if match:
+        date_str = match.group(1)
+        statement_date = datetime.strptime(date_str, '%m%d%y')
+    else:
+        print(f'Could not extract date from filename: {file_path}')
+        return
 
     with pdfplumber.open(file_path) as pdf:
       for page in pdf.pages:
@@ -71,16 +100,19 @@ def extract_transactions_across_pages(file_path, start_pattern, end_pattern, col
         if start_pattern in page_text:
           is_extracting = True
         if is_extracting:
-          transactions.extend(extract_transactions_for_page(page, columns))
+          transactions.extend(extract_transactions_for_page(page, columns, statement_date))
         if end_pattern in page_text and is_extracting:
           is_extracting = False
           break
     return transactions
+
 def convert_pdf(file_path):
   columns = ["Date", "Number", "Description", "Deposits/", "Withdrawals/", "Ending daily"]
-  start_pattern = "Transaction history"
+  start_pattern = "Page 2 of "
   end_pattern = "Ending balance on"
+  
   transactions = extract_transactions_across_pages(file_path, start_pattern, end_pattern, columns)
+
   # Export to CSV
   csv_file = file_path.replace('.pdf', '_transactions.csv')
   with open(csv_file, 'w', newline='') as csvfile:
