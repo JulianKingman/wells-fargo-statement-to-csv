@@ -10,6 +10,7 @@ def extract_transactions_for_page(page, columns):
     current_date = None
             
     words = page.extract_words(keep_blank_chars=True)
+    words.sort(key=lambda word: (word['top'], word['x0']))
 
     if None in column_positions.values():
       processed_indices = []
@@ -23,33 +24,40 @@ def extract_transactions_for_page(page, columns):
         del words[index]
 
     # Group words by row
-    words_by_row = {}
+    rows = []
     for word in words:
-      # Round the top attribute to avoid minor differences in positioning
-      row = round(word['top'])
-      if row not in words_by_row:
-        words_by_row[row] = []
-      words_by_row[row].append(word)
+      row = word['top']
+      if not rows or rows[-1][0] != row:
+        rows.append((row, []))
+      rows[-1][1].append(word)
 
     # Sort words in each row by x0 attribute
-    for row in words_by_row:
-      words_by_row[row].sort(key=lambda word: word['x0'])
+    for _, words_in_row in rows:
+      words_in_row.sort(key=lambda word: word['x0'])
 
-    # Process each row
-    for row, words_in_row in sorted(words_by_row.items()):
+    # Now you can process each row
+    for i, (row, words_in_row) in enumerate(rows):
+      # Initialize a new transaction
+      transaction = {column: '' for column in columns}
+
+      for word in words_in_row:
+        if 'Ending balance' in word['text']:
+          break
+        for column in columns:
+          if column_positions[column] <= word['x0'] < column_positions.get(next(iter(columns[columns.index(column)+1:]), ''), float('inf')):
+            if column == "Date" and re.match(r'\d{1,2}/\d{1,2}', word['text']):
+              transaction["Date"] = word['text']
+            elif column != "Date":
+              transaction[column] += word['text'] + ' '
       # Check if the line starts with a date
-      if re.match(r'\d{1,2}/\d{1,2}', words_in_row[0]['text']):
-        # If it does, start a new transaction
-        transaction = {column: '' for column in columns}
-        transaction['Date'] = re.findall(r'\d{1,2}/\d{1,2}', words_in_row[0]['text'])[0]
-        for word in words_in_row:
-          if 'Ending balance' in word['text']:
-            break
-          for column in columns:
-            if column_positions[column] <= word['x0'] < column_positions.get(next(iter(columns[columns.index(column)+1:]), ''), float('inf')):
-              if column != "Date":
-                transaction[column] += word['text'] + ' '
+      if re.match(r'\d{1,2}/\d{1,2}', transaction['Date']):
+        print(f"Transaction found: {i, transaction}")
         transactions.append(transaction)
+      elif i > 0 and re.match(r'\d{1,2}/\d{1,2}', rows[i-1][1][0]['text']):
+        # If the previous row starts with a date, append to the previous transaction
+        for column in columns:
+          if column != "Date":
+            transactions[-1][column] += '\n' + transaction[column]
 
     return transactions
 def extract_transactions_across_pages(file_path, start_pattern, end_pattern, columns):
