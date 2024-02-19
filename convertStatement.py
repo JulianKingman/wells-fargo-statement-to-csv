@@ -14,8 +14,6 @@ def extract_transactions_for_page(page, columns, statement_date):
     words = page.extract_words(keep_blank_chars=True)
     words.sort(key=lambda word: (word['top'], word['x0']))
 
-    print(words)
-
     if None in column_positions.values():
       processed_indices = []
       for i, word in enumerate(words):
@@ -27,8 +25,6 @@ def extract_transactions_for_page(page, columns, statement_date):
       for index in sorted(processed_indices, reverse=True):
         del words[index]
     
-    print(column_positions)
-
     # Group words by row
     rows = []
     for word in words:
@@ -45,17 +41,23 @@ def extract_transactions_for_page(page, columns, statement_date):
     for i, (row, words_in_row) in enumerate(rows):
       # Initialize a new transaction
       transaction = {column: '' for column in columns}
-      print(words_in_row)
 
       for word in words_in_row:
         if 'Ending balance' in word['text']:
           break
         for column in columns:
-          if column_positions[column] <= word['x0'] < column_positions.get(next(iter(columns[columns.index(column)+1:]), ''), float('inf')):
-            if column == "Date" and re.match(r'\d{1,2}/\d{1,2}', word['text']):
-              transaction["Date"] = word['text']
-            elif column != "Date":
-              transaction[column] += word['text'] + ' '
+          try:
+            if column_positions[column] <= word['x0'] < column_positions.get(next(iter(columns[columns.index(column)+1:]), ''), float('inf')):
+              if column == "Date" and re.match(r'\d{1,2}/\d{1,2}', word['text']):
+                transaction["Date"] = word['text']
+              elif column != "Date":
+                transaction[column] += word['text'] + ' '
+          except:
+            print(f'Error processing word: {word}')
+            print(f'Columns: {columns}')
+            print(f'Column positions: {column_positions}')
+            print(f'Word: {word}')
+            sys.exit(1)
       # Check if the line starts with a date
       if re.match(r'\d{1,2}/\d{1,2}', transaction['Date']):
         transactions.append(transaction)
@@ -97,7 +99,6 @@ def extract_transactions_across_pages(file_path, end_pattern, columns):
     with pdfplumber.open(file_path) as pdf:
       for page in pdf.pages:
         page_text = page.extract_text()
-        print(page_text)
         if page.page_number == 2:
           is_extracting = True
         if is_extracting:
@@ -109,7 +110,7 @@ def extract_transactions_across_pages(file_path, end_pattern, columns):
 
 def convert_pdf(file_path):
   columns = ["Date", "Number", "Description", "Deposits/", "Withdrawals/", "Ending daily"]
-  end_pattern = "Ending balance on"
+  end_pattern = "The Ending Daily Balance does not reflect any pending withdrawals "
   
   transactions = extract_transactions_across_pages(file_path, end_pattern, columns)
 
